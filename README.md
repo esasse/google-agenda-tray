@@ -170,6 +170,11 @@ meeting starts, to pick up a link or room changed at the last minute.
 An account whose authorization was revoked or expired shows as an error naming it;
 connect it again with `L`.
 
+When some accounts answer and others do not (or an account answers but one of its
+calendars fails), the day on screen is missing those events, and the count on the icon
+leaves them out. The tooltip then ends in `(1 account failed)`, and the popup names the
+account and the reason.
+
 ## Implementation notes
 
 1. **`dotnet publish` leaves out the app's `.pri` and `.xbf` files** for an unpackaged

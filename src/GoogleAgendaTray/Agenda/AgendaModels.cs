@@ -42,6 +42,9 @@ internal sealed class AgendaResult
     public bool NeedsSetup { get; set; }
     public bool NeedsLogin { get; set; }
     public List<string> Reauth { get; set; } = [];
+    /// <summary>Accounts that brought back less than their whole day (a token, the
+    /// calendar list or one calendar failed): the day shown is missing their part.</summary>
+    public List<string> FailedAccounts { get; set; } = [];
     public List<string> Accounts { get; set; } = [];
     public List<AgendaEvent> Events { get; set; } = [];
     public List<string> Errors { get; set; } = [];

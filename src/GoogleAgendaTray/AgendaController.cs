@@ -143,7 +143,9 @@ internal sealed class AgendaController : IDisposable
     private void Apply(AgendaResult result)
     {
         Result = result;
-        LastError = result.Errors.FirstOrDefault();
+        // All of them: with two accounts down, naming one would hide the other. The
+        // popup's status line trims it and shows the whole text on hover.
+        LastError = result.Errors.Count > 0 ? string.Join(" · ", result.Errors) : null;
         foreach (var error in result.Errors) Log.Write($"fetch: {error}");
 
         // Retry soon only for what time can fix (the network); a missing setup or an

@@ -154,10 +154,11 @@ internal static class Fmt
     }
 
     /// <summary>The tray tooltip. Shell_NotifyIcon allows 127 characters, so each
-    /// title is shortened to keep both lines and the stale note in: at their longest
-    /// the fixed parts take 69 (22 + 24 + 21 + two line breaks), which leaves 58 for
-    /// the two titles. The "N events left today" line on top only goes in when it
-    /// still fits.</summary>
+    /// title is shortened to keep both lines and the note in: at their longest the
+    /// fixed parts take 69 (22 + 24 + 21 + two line breaks), which leaves 58 for the
+    /// two titles. The note is one of "cached", "could not refresh" or "N accounts
+    /// failed", never two, and none longer than 21. The "N events left today" line on
+    /// top only goes in when it still fits.</summary>
     public static string Tooltip(AgendaResult? result, DateTimeOffset now)
     {
         if (result == null) return "Agenda - loading…";
@@ -170,7 +171,15 @@ internal static class Fmt
         if (live != null) lines.Add($"Now: {ShortTitle(live.Title, 30)} (ends in {Duration(Secs(live.End, now))})");
         if (next != null) lines.Add($"Next: {Hm(next.Start)} {ShortTitle(next.Title, 28)} ({Relative(next, now)})");
         if (lines.Count == 0) lines.Add(events.Count > 0 ? "Nothing left today" : "Nothing scheduled today");
+        // Some accounts answered and some did not: the list and the count on the icon
+        // are short by whatever the silent ones had. Same slot and budget as the stale
+        // note (at most 21 characters); the popup names the account and the reason.
+        // It goes ahead of "could not refresh": an account that answered with an empty
+        // day leaves no events, yet the refresh did reach Google.
+        var failed = result.FailedAccounts.Count;
         if (result.Stale) lines.Add("(cached - no network)");
+        else if (failed > 0 && (events.Count > 0 || failed < result.Accounts.Count))
+            lines.Add(failed == 1 ? "(1 account failed)" : $"({failed} accounts failed)");
         else if (result.Errors.Count > 0 && events.Count == 0) lines.Add("(could not refresh)");
 
         // What the number on the icon means. It goes first, but it is the line that

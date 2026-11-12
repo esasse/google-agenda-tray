@@ -48,10 +48,11 @@ internal static class AgendaService
             return result;
         }
 
-        var (events, errors, reauth) = await CollectAsync(day, settings, client, accounts, ct).ConfigureAwait(false);
+        var (events, errors, reauth, failed) = await CollectAsync(day, settings, client, accounts, ct).ConfigureAwait(false);
         result.Events = events;
         result.Errors = errors;
         result.Reauth = reauth;
+        result.FailedAccounts = failed;
         result.NeedsLogin = reauth.Count > 0 && reauth.Count == accounts.Count;
         result.Ok = errors.Count == 0 || events.Count > 0;
 
@@ -73,7 +74,7 @@ internal static class AgendaService
         return result;
     }
 
-    private static async Task<(List<AgendaEvent>, List<string>, List<string>)> CollectAsync(
+    private static async Task<(List<AgendaEvent> Events, List<string> Errors, List<string> Reauth, List<string> Failed)> CollectAsync(
         DateOnly day, Settings settings, OAuthClient client, List<Account> accounts, CancellationToken ct)
     {
         var dayStart = LocalMidnight(day);
@@ -81,12 +82,19 @@ internal static class AgendaService
         var events = new ConcurrentBag<AgendaEvent>();
         var errors = new ConcurrentQueue<string>();
         var reauth = new ConcurrentQueue<string>();
+        // Accounts that brought back less than their whole day, for any reason.
+        var failed = new ConcurrentQueue<string>();
 
         async Task Work(Account account)
         {
             var label = settings.Aliases.TryGetValue(account.Email, out var alias) && !string.IsNullOrWhiteSpace(alias)
                 ? alias
                 : account.Email.Split('@')[0];
+            void Fail(string error)
+            {
+                errors.Enqueue(error);
+                failed.Enqueue(account.Email);
+            }
             string token;
             try
             {
@@ -97,11 +105,11 @@ internal static class AgendaService
                 if (ex.InvalidGrant)
                 {
                     reauth.Enqueue(account.Email);
-                    errors.Enqueue($"{account.Email}: authorization expired, connect it again (L)");
+                    Fail($"{account.Email}: authorization expired, connect it again (L)");
                 }
                 else
                 {
-                    errors.Enqueue($"{account.Email}: {ex.Message}");
+                    Fail($"{account.Email}: {ex.Message}");
                 }
                 return;
             }
@@ -113,7 +121,7 @@ internal static class AgendaService
             }
             catch (ApiException ex)
             {
-                errors.Enqueue($"{account.Email}: {ex.Message}");
+                Fail($"{account.Email}: {ex.Message}");
                 return;
             }
 
@@ -129,7 +137,7 @@ internal static class AgendaService
                 catch (ApiException ex)
                 {
                     var name = cal.Str("summary") is { Length: > 0 } s ? s : cal.Str("id");
-                    errors.Enqueue($"{account.Email} / {name}: {ex.Message}");
+                    Fail($"{account.Email} / {name}: {ex.Message}");
                 }
                 finally
                 {
@@ -152,7 +160,10 @@ internal static class AgendaService
         {
             if (seen.Add((e.Title, e.Start.ToUnixTimeSeconds(), e.Account))) unique.Add(e);
         }
-        return (unique, errors.ToList(), reauth.Distinct().Order(StringComparer.Ordinal).ToList());
+        // Sorted: the accounts are fetched in parallel, and finishing order would make
+        // the same failures read differently from one refresh to the next.
+        return (unique, errors.Order(StringComparer.Ordinal).ToList(), reauth.Distinct().Order(StringComparer.Ordinal).ToList(),
+            failed.Distinct().Order(StringComparer.Ordinal).ToList());
     }
 
     public static async Task<List<JsonElement>> CalendarsAsync(string token, Settings settings, CancellationToken ct)
