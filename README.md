@@ -107,8 +107,15 @@ connected — the plain-text refresh token in each is encrypted on first read.
 The popup opens on the meeting that matters now, not on the first one of the day. A row
 with no video link opens the event in Google Calendar instead. Google links carry
 `authuser=<account>`, so the meeting opens under the right account even with several
-signed in to the browser. Meet, Zoom, Teams, Webex, Whereby, Jitsi, Chime and Slack
-huddle links are recognised, including ones that only exist inside the description.
+signed in to the browser. For a calendar of another of your accounts shared with the
+connected one, that is the calendar's owner — the address actually invited: your
+`work@company.com` calendar shared with `me@gmail.com` opens its meetings as
+`work@company.com`, which has to be signed in to the browser too. The join button's
+tooltip says so (`Join Google Meet as work@company.com`). This only applies to shared
+calendars you can edit; a colleague's calendar shared with you to read opens under the
+connected account, since its owner is never signed in to your browser. Meet, Zoom, Teams, Webex,
+Whereby, Jitsi, Chime and Slack huddle links are recognised, including ones that only
+exist inside the description.
 
 Launching the app again while it runs opens its popup instead of a second copy.
 

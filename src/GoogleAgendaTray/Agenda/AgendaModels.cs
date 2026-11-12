@@ -21,6 +21,9 @@ internal sealed class AgendaEvent
     public string JoinUrl { get; set; } = "";
     public string JoinKind { get; set; } = "";
     public string HtmlLink { get; set; } = "";
+    /// <summary>The Google identity the links open under: the owner of a shared
+    /// calendar, otherwise the account that fetched the event.</summary>
+    public string OpenAs { get; set; } = "";
     public string MyStatus { get; set; } = "";
     public string Organizer { get; set; } = "";
     public bool OrganizerSelf { get; set; }

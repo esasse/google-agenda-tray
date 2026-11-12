@@ -44,7 +44,11 @@ public sealed class EventItem : INotifyPropertyChanged
 
     public Visibility JoinVisibility => Fmt.IsJoinable(Event, _now) ? Visibility.Visible : Visibility.Collapsed;
 
-    public string JoinTooltip => "Join " + Fmt.JoinName(Event.JoinKind);
+    public string JoinTooltip =>
+        "Join " + Fmt.JoinName(Event.JoinKind) +
+        (!string.IsNullOrEmpty(Event.OpenAs) && !string.Equals(Event.OpenAs, Event.Account, StringComparison.OrdinalIgnoreCase)
+            ? " as " + Event.OpenAs
+            : "");
 
     /// <summary>The source calendar's colour: with several accounts in one list, it
     /// says where the appointment came from before you read a word.</summary>

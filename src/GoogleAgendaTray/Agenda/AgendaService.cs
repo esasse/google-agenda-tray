@@ -144,7 +144,11 @@ internal static class AgendaService
         // team calendar, say); per account it is listed once.
         var seen = new HashSet<(string, long, string)>();
         var unique = new List<AgendaEvent>();
-        foreach (var e in events.OrderBy(e => !e.AllDay).ThenBy(e => e.Start).ThenBy(e => e.Title, StringComparer.Ordinal))
+        // When copies differ, keep the one that opens as the account itself (you are
+        // invited directly) over a shared calendar's, and pick the same one every time.
+        foreach (var e in events.OrderBy(e => !e.AllDay).ThenBy(e => e.Start).ThenBy(e => e.Title, StringComparer.Ordinal)
+                     .ThenBy(e => !string.Equals(e.OpenAs, e.Account, StringComparison.OrdinalIgnoreCase))
+                     .ThenBy(e => e.OpenAs, StringComparer.OrdinalIgnoreCase))
         {
             if (seen.Add((e.Title, e.Start.ToUnixTimeSeconds(), e.Account))) unique.Add(e);
         }
@@ -198,6 +202,7 @@ internal static class AgendaService
             if (settings.HideDeclined && status == "declined") continue;
             var (joinUrl, joinKind) = JoinLinks.Find(ev);
             var organizer = ev.Obj("organizer");
+            var openAs = OpenAs(calendarId, calendar.Bool("primary"), calendar.Str("accessRole"), email);
 
             list.Add(new AgendaEvent
             {
@@ -215,9 +220,10 @@ internal static class AgendaService
                 Busy = ev.Str("transparency") != "transparent",
                 Recurring = ev.Str("recurringEventId").Length > 0,
                 Location = ev.Str("location"),
-                JoinUrl = JoinLinks.WithAuthUser(joinUrl, email),
+                OpenAs = openAs,
+                JoinUrl = JoinLinks.WithAuthUser(joinUrl, openAs),
                 JoinKind = joinKind,
-                HtmlLink = JoinLinks.WithAuthUser(ev.Str("htmlLink"), email),
+                HtmlLink = JoinLinks.WithAuthUser(ev.Str("htmlLink"), openAs),
                 MyStatus = status,
                 Organizer = organizer.Str("displayName") is { Length: > 0 } n ? n : organizer.Str("email"),
                 OrganizerSelf = organizer.Bool("self"),
@@ -226,6 +232,27 @@ internal static class AgendaService
         }
         return list;
     }
+
+    /// <summary>
+    /// The Google identity a link should open under. For an event on another of your
+    /// own accounts' calendars, shared with the one connected here, that is the
+    /// calendar's owner - the address actually invited: opened as the fetching
+    /// account, the Meet link lands on "ask to join" and the event on a read-only copy.
+    ///
+    /// Only for calendars you can edit (owner or writer), which is how you share your
+    /// own work calendar with your personal account. A colleague's calendar shared with
+    /// you to read keeps the connected account: its owner is never signed in to your
+    /// browser, and authuser=them would trade a working "ask to join" for a sign-in page.
+    ///
+    /// A user's calendar is named by their primary address, which is what authuser
+    /// accepts (the "self" attendee can be an alias); group, holiday, resource and
+    /// imported calendars live under calendar.google.com and belong to no one.
+    /// </summary>
+    private static string OpenAs(string calendarId, bool primary, string accessRole, string account) =>
+        !primary && (accessRole is "owner" or "writer") && IsPersonAddress(calendarId) ? calendarId : account;
+
+    private static bool IsPersonAddress(string address) =>
+        address.Contains('@') && !address.EndsWith(".calendar.google.com", StringComparison.OrdinalIgnoreCase);
 
     private static string MyStatus(JsonElement ev)
     {
