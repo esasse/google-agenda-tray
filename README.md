@@ -8,6 +8,10 @@ the tray icon says what is going on (a meeting in progress, one starting in a fe
 minutes, or how many events are left today), and the popup lists the whole day, merged
 across every account and calendar, with a button per row to join the call.
 
+<p align="center">
+  <img src="docs/popup.png" width="418" alt="The popup: today's events from two accounts, the meeting in progress highlighted, a join button on each call">
+</p>
+
 ## How it works
 
 - **Your own OAuth client.** The app reads your calendars through an OAuth client of
@@ -20,7 +24,11 @@ across every account and calendar, with a button per row to join the call.
   here the same logic lives in the app, which polls every three minutes and keeps the
   countdowns alive with a 15-second clock that never touches the network.
 
-The tray icon has four states:
+The tray icon has four states, drawn to match the taskbar's theme:
+
+<p align="center">
+  <img src="docs/tray-icons.png" width="416" alt="The four tray icon states on a dark and a light taskbar: a calendar page with 3, an amber 6, a red camera, a calendar page with an exclamation mark">
+</p>
 
 | Icon | Meaning |
 |---|---|
@@ -130,6 +138,10 @@ stays until you join, dismiss it, or the event is ten minutes in (or over, if sh
 Events starting together share one card. All-day and declined events get none, and a
 meeting invited on two accounts gets one. Starting the app a few minutes into a meeting
 still reminds you of it. `reminder_minutes` changes the lead time; `0` turns it off.
+
+<p align="center">
+  <img src="docs/reminder.png" width="367" alt="The reminder card: Design review in 1 min, with Join Google Meet and Dismiss buttons">
+</p>
 
 ## Configuration
 
