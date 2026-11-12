@@ -6,8 +6,22 @@ namespace AgendaTray;
 /// <summary>Where the app keeps its state: %LOCALAPPDATA%\google-agenda-tray.</summary>
 internal static class AppPaths
 {
-    public static readonly string Root = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "google-agenda-tray");
+    /// <summary>GOOGLE_AGENDA_TRAY_HOME points the app at another folder: a throwaway
+    /// one for trying things, so test data never lands next to the real accounts. Made
+    /// absolute, so a relative value does not follow the folder the app started in.</summary>
+    public static readonly string Root =
+        Environment.GetEnvironmentVariable("GOOGLE_AGENDA_TRAY_HOME") is { Length: > 0 } home
+            ? Path.GetFullPath(home)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "google-agenda-tray");
+
+    /// <summary>Names the single-instance mutex and the tray window class. A copy
+    /// running on another home is a separate app: with the same names, launching it
+    /// next to the real one would only open the real one's popup.</summary>
+    public static readonly string InstanceName =
+        Environment.GetEnvironmentVariable("GOOGLE_AGENDA_TRAY_HOME") is { Length: > 0 }
+            ? "GoogleAgendaTray-" + Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Root.ToLowerInvariant())))[..12]
+            : "GoogleAgendaTray";
 
     public static string ClientFile => Path.Combine(Root, "client.json");
     public static string AccountsDir => Path.Combine(Root, "accounts");

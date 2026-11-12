@@ -121,6 +121,16 @@ exist inside the description.
 
 Launching the app again while it runs opens its popup instead of a second copy.
 
+**Reminders**
+
+Two minutes before each event a card comes up in the corner above the tray, with
+**Join Google Meet** (or Zoom, Teams…) — or **Open in Calendar** for an event with no
+call. It appears without taking the focus, so it never eats what you are typing, and it
+stays until you join, dismiss it, or the event is ten minutes in (or over, if shorter).
+Events starting together share one card. All-day and declined events get none, and a
+meeting invited on two accounts gets one. Starting the app a few minutes into a meeting
+still reminds you of it. `reminder_minutes` changes the lead time; `0` turns it off.
+
 ## Configuration
 
 `%LOCALAPPDATA%\google-agenda-tray\config.json`, created on first run. *Edit
@@ -133,7 +143,8 @@ configuration* in the tray menu opens it; *Reload configuration* applies it.
   "hide_declined": false,
   "include_all_day": true,
   "refresh_interval_sec": 180,
-  "hotkey": "Ctrl+Win+A"
+  "hotkey": "Ctrl+Win+A",
+  "reminder_minutes": 2
 }
 ```
 
@@ -157,6 +168,9 @@ runs without it.
 | `cache\<date>.json` | last fetched day — what shows up with no network |
 | `config.json` | settings |
 | `agenda.log` | log (rotates at 256 KB) |
+
+To try something without touching your accounts, set `GOOGLE_AGENDA_TRAY_HOME` to
+another folder before starting the app: everything above then lives there instead.
 
 ## When something fails
 

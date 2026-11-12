@@ -29,7 +29,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _instance = new Mutex(true, @"Local\GoogleAgendaTray", out var createdNew);
+        _instance = new Mutex(true, @"Local\" + AppPaths.InstanceName, out var createdNew);
         if (!createdNew)
         {
             // Already in the tray: a second launch (Start menu, autostart plus a

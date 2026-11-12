@@ -89,6 +89,7 @@ public sealed partial class PopupWindow : Window
             Render();
             FocusCurrentRow();
             Place(EstimateHeightDip());
+            _app.PopupOpened();
             AppWindow.Show(true);
             Activate();
             Native.SetForegroundWindow(_hwnd);
@@ -107,6 +108,9 @@ public sealed partial class PopupWindow : Window
         catch (Exception ex)
         {
             Log.Write($"error opening the popup: {ex}");
+            // HidePopup will never run for a popup that did not open: without this the
+            // reminder card would stay suspended for the rest of the session.
+            if (!IsOpen) _app.PopupClosed();
         }
     }
 
@@ -115,6 +119,7 @@ public sealed partial class PopupWindow : Window
         if (!IsOpen) return;
         _lastHideTicks = Environment.TickCount64;
         AppWindow.Hide();
+        _app.PopupClosed();
     }
 
     internal void CloseForGood()
@@ -204,7 +209,7 @@ public sealed partial class PopupWindow : Window
         var events = result?.Events ?? [];
         var live = Fmt.LiveEvent(events, now) != null;
 
-        HeaderIcon.Glyph = live ? "" : "";
+        HeaderIcon.Glyph = live ? "\uE714" : "\uE787";
         HeaderIcon.Foreground = EventItem.Theme(live ? "SystemFillColorCriticalBrush" : "TextFillColorPrimaryBrush");
         DateText.Text = Fmt.DateLabel(result?.Date ?? Fmt.IsoDate(DateOnly.FromDateTime(DateTime.Now)));
         MetaText.Text = Fmt.HeroMeta(result, now);

@@ -116,6 +116,45 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    public const uint WM_WINDOWPOSCHANGING = 0x0046;
+    public const uint WM_NCDESTROY = 0x0082;
+    public const uint SWP_NOZORDER = 0x0004;
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINDOWPOS
+    {
+        public IntPtr hwnd;
+        public IntPtr hwndInsertAfter;
+        public int x, y, cx, cy;
+        public uint flags;
+    }
+
+    public delegate IntPtr SubclassProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr refData);
+
+    [DllImport("comctl32.dll")]
+    public static extern bool SetWindowSubclass(IntPtr hWnd, SubclassProc proc, UIntPtr id, UIntPtr refData);
+
+    [DllImport("comctl32.dll")]
+    public static extern bool RemoveWindowSubclass(IntPtr hWnd, SubclassProc proc, UIntPtr id);
+
+    [DllImport("comctl32.dll")]
+    public static extern IntPtr DefSubclassProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+
+    public static bool IsTopmost(IntPtr hWnd) => (GetWindowLongPtr(hWnd, -20 /* GWL_EXSTYLE */).ToInt64() & 0x8) != 0;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    /// <summary>Raises a window above every other, topmost included, without
+    /// activating it.</summary>
+    public static void RaiseTopmost(IntPtr hWnd) =>
+        SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0,
+            0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | 0x0010 /* NOACTIVATE */);
+
     [DllImport("user32.dll")]
     public static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 

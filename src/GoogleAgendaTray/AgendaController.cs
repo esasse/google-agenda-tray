@@ -18,6 +18,10 @@ internal sealed class AgendaController : IDisposable
     private readonly DispatcherQueue _dispatcher;
     private readonly TrayHost _tray;
     private readonly PopupWindow _popup;
+    private readonly ReminderWindow _reminders;
+    // Reminders already shown today, by ReminderWindow.KeyOf: dismissing one must not
+    // bring it back on the next tick. A moved event has a new key and is reminded again.
+    private readonly HashSet<string> _reminded = [];
     private readonly DispatcherQueueTimer _pollTimer;
     private readonly DispatcherQueueTimer _clockTimer;
     private readonly DispatcherQueueTimer _retryTimer;
@@ -53,6 +57,7 @@ internal sealed class AgendaController : IDisposable
         };
 
         _popup = new PopupWindow(this);
+        _reminders = new ReminderWindow(this);
 
         _pollTimer = dispatcher.CreateTimer();
         _pollTimer.Interval = TimeSpan.FromSeconds(Settings.RefreshIntervalSec);
@@ -192,6 +197,7 @@ internal sealed class AgendaController : IDisposable
         {
             _dayRefreshedFor = today;
             Log.Write("new day; refreshing");
+            _reminded.Clear();
             Refresh(force: true);
         }
 
@@ -219,11 +225,43 @@ internal sealed class AgendaController : IDisposable
         {
             UpdateTray();
             if (_popup.IsOpen) _popup.Render();
+            CheckReminders();
         }
         catch (Exception ex)
         {
             Log.Write($"error updating the UI: {ex}");
         }
+    }
+
+    /// <summary>
+    /// Raises the "about to start" card for every event whose start is within
+    /// reminder_minutes, once each. Runs on every clock tick and after every fetch, so
+    /// a reminder already up follows a link or time changed at the last minute.
+    /// Opening the app a few minutes into a meeting still reminds you of it, up to the
+    /// card's own expiry.
+    /// </summary>
+    private void CheckReminders()
+    {
+        var now = Now;
+        var events = Events;
+        // Yesterday's list, before today's fetch: nothing in it is coming up.
+        var current = Result != null && Result.Date == Fmt.IsoDate(Today());
+        var lead = TimeSpan.FromMinutes(Settings.ReminderMinutes);
+        if (current && lead > TimeSpan.Zero)
+        {
+            foreach (var e in events)
+            {
+                if (e.AllDay || Fmt.Declined(e)) continue;
+                if (now < e.Start - lead || now >= ReminderWindow.Expiry(e)) continue;
+                if (!_reminded.Add(ReminderWindow.KeyOf(e))) continue;
+                Log.Write($"reminder: event at {Fmt.Hm(e.Start)} ({(string.IsNullOrEmpty(e.JoinUrl) ? "no link" : e.JoinKind)})");
+                _reminders.Add(e, now);
+            }
+        }
+        // A day some account failed to bring back is missing its events: a reminder
+        // not in it may still be on, and dropping it would never bring it back.
+        var complete = !current || (Result!.FailedAccounts.Count == 0 && !Result.Stale);
+        _reminders.Sync(current ? events : [], complete, now);
     }
 
     // -------------------------------------------------------------------- tray
@@ -368,8 +406,16 @@ internal sealed class AgendaController : IDisposable
     public void Activate(AgendaEvent? e)
     {
         if (e == null) return;
+        _reminders.Forget(e);
+        // Joined a few minutes early: no card later for a call you are already in.
+        // Not for an event hours away - opening it ahead must not silence its reminder.
+        if (e.Start - DateTimeOffset.Now <= TimeSpan.FromMinutes(Math.Max(15, Settings.ReminderMinutes)))
+            _reminded.Add(ReminderWindow.KeyOf(e));
         Shell.Open(!string.IsNullOrEmpty(e.JoinUrl) ? e.JoinUrl : e.HtmlLink);
     }
+
+    public void PopupOpened() => _reminders.Suspend();
+    public void PopupClosed() => _reminders.Resume();
 
     public void JoinFocused() => Activate(Fmt.FocusEvent(Events, DateTimeOffset.Now));
 
@@ -511,6 +557,7 @@ internal sealed class AgendaController : IDisposable
         _loginCts?.Cancel();
         _tray.Dispose();
         _popup.CloseForGood();
+        _reminders.CloseForGood();
     }
 }
 

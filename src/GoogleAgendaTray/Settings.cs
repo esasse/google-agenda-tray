@@ -16,6 +16,8 @@ internal sealed class Settings
 
     public int RefreshIntervalSec { get; set; } = 180;
     public string Hotkey { get; set; } = "Ctrl+Win+A";
+    /// <summary>Minutes before an event that the "about to start" card appears; 0 turns it off.</summary>
+    public int ReminderMinutes { get; set; } = 2;
 
     internal static readonly JsonSerializerOptions Json = new()
     {
@@ -50,6 +52,7 @@ internal sealed class Settings
         settings.IgnoreCalendars ??= [];
         settings.Hotkey ??= "";
         settings.RefreshIntervalSec = Math.Clamp(settings.RefreshIntervalSec, 30, 3600);
+        settings.ReminderMinutes = Math.Clamp(settings.ReminderMinutes, 0, 60);
         return settings;
     }
 }

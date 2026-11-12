@@ -38,6 +38,14 @@ public sealed class EventItem : INotifyPropertyChanged
     public string Meta => Fmt.MetaLine(Event);
     public string Relative => State == RowState.Past ? "" : Fmt.Relative(Event, _now);
 
+    /// <summary>The reminder's second line: "in 2 min · 14:00–14:30".</summary>
+    public string WhenText => Fmt.Relative(Event, _now) + " · " + Fmt.Hm(Event.Start) + "–" + Fmt.Hm(Event.End);
+
+    /// <summary>The reminder's button: the call when there is one, the event otherwise.</summary>
+    public string ActionLabel => string.IsNullOrEmpty(Event.JoinUrl) ? "Open in Calendar" : "Join " + Fmt.JoinName(Event.JoinKind);
+    public string ActionTooltip => string.IsNullOrEmpty(Event.JoinUrl) ? "Open the event in Google Calendar" : JoinTooltip;
+    public string ActionGlyph => string.IsNullOrEmpty(Event.JoinUrl) ? "\uE787" : "\uE714";
+
     public double RowOpacity => State == RowState.Past || Fmt.Declined(Event) ? 0.45 : 1.0;
 
     public TextDecorations TitleDecorations => Fmt.Declined(Event) ? TextDecorations.Strikethrough : TextDecorations.None;

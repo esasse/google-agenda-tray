@@ -21,7 +21,7 @@ internal sealed record MenuEntry(string Text, int Id = 0, bool Enabled = true, b
 /// </summary>
 internal sealed class TrayHost : IDisposable
 {
-    public const string WindowClass = "GoogleAgendaTray.Host";
+    public static readonly string WindowClass = AppPaths.InstanceName + ".Host";
     private const uint WM_TRAY = Native.WM_APP + 1;
     private const uint WM_SHOW_POPUP = Native.WM_APP + 2;
     private const int HotkeyId = 0xA6E;
