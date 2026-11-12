@@ -5,8 +5,8 @@ join the meeting.
 
 A Windows port of the [omarchy-agenda](https://github.com/esasse/omarchy-agenda) plugin:
 the tray icon says what is going on (a meeting in progress, one starting in a few
-minutes, or just today's date), and the popup lists the whole day, merged across every
-account and calendar, with a button per row to join the call.
+minutes, or how many events are left today), and the popup lists the whole day, merged
+across every account and calendar, with a button per row to join the call.
 
 ## How it works
 
@@ -24,12 +24,14 @@ The tray icon has four states:
 
 | Icon | Meaning |
 |---|---|
-| calendar page with today's day | nothing urgent |
+| calendar page with a number | how many events are left today (not counting all-day or declined ones) |
 | amber disc with a number | the next meeting starts in that many minutes (10 or less) |
 | red disc with a camera | a meeting is going on now |
 | calendar page with `!` | setup pending, or nothing to show and an error |
 
-The tooltip has the words: `Now: Product sync (ends in 12 min)` / `Next: 14:30 Design review (in 25 min)`.
+The tooltip has the words: `3 events left today` / `Now: Product sync (ends in 12 min)` /
+`Next: 14:30 Design review (in 25 min)`. Before the day's first fetch the calendar page
+shows `…` instead of a number.
 
 ## Requirements
 

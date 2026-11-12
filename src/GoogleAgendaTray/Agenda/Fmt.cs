@@ -85,8 +85,13 @@ internal static class Fmt
     public static AgendaEvent? FocusEvent(IReadOnlyList<AgendaEvent> events, DateTimeOffset now) =>
         LiveEvent(events, now) ?? NextEvent(events, now);
 
+    /// <summary>Timed, not declined, not over yet. A meeting you are invited to on two
+    /// accounts is one row per account in the list, but one meeting here.</summary>
     public static int Remaining(IReadOnlyList<AgendaEvent> events, DateTimeOffset now) =>
-        events.Count(e => !e.AllDay && !Declined(e) && e.End > now);
+        events.Where(e => !e.AllDay && !Declined(e) && e.End > now)
+            .Select(e => (e.Title, e.Start))
+            .Distinct()
+            .Count();
 
     public static string HeroMeta(AgendaResult? result, DateTimeOffset now)
     {
@@ -151,7 +156,8 @@ internal static class Fmt
     /// <summary>The tray tooltip. Shell_NotifyIcon allows 127 characters, so each
     /// title is shortened to keep both lines and the stale note in: at their longest
     /// the fixed parts take 69 (22 + 24 + 21 + two line breaks), which leaves 58 for
-    /// the two titles.</summary>
+    /// the two titles. The "N events left today" line on top only goes in when it
+    /// still fits.</summary>
     public static string Tooltip(AgendaResult? result, DateTimeOffset now)
     {
         if (result == null) return "Agenda - loading…";
@@ -163,9 +169,20 @@ internal static class Fmt
         var next = NextEvent(events, now);
         if (live != null) lines.Add($"Now: {ShortTitle(live.Title, 30)} (ends in {Duration(Secs(live.End, now))})");
         if (next != null) lines.Add($"Next: {Hm(next.Start)} {ShortTitle(next.Title, 28)} ({Relative(next, now)})");
-        if (lines.Count == 0) lines.Add(events.Count > 0 ? "No meetings left today" : "Nothing scheduled today");
+        if (lines.Count == 0) lines.Add(events.Count > 0 ? "Nothing left today" : "Nothing scheduled today");
         if (result.Stale) lines.Add("(cached - no network)");
         else if (result.Errors.Count > 0 && events.Count == 0) lines.Add("(could not refresh)");
-        return string.Join("\n", lines);
+
+        // What the number on the icon means. It goes first, but it is the line that
+        // gives way when the two titles and the stale note already fill the 127.
+        var tooltip = string.Join("\n", lines);
+        // Same rule as the icon: yesterday's list, before today's fetch, has no count.
+        var left = result.Date == IsoDate(DateOnly.FromDateTime(now.LocalDateTime)) ? Remaining(events, now) : 0;
+        if (left > 0)
+        {
+            var count = left + (left == 1 ? " event left today" : " events left today");
+            if (count.Length + 1 + tooltip.Length <= 127) tooltip = count + "\n" + tooltip;
+        }
+        return tooltip;
     }
 }

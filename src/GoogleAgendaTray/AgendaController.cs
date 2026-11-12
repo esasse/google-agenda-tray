@@ -231,7 +231,11 @@ internal sealed class AgendaController : IDisposable
         var now = DateTimeOffset.Now;
         var events = Events;
         TrayGlyph glyph;
-        var text = now.Day.ToString();
+        // The calendar page carries how many events are left today. Before the first
+        // fetch, and after midnight until today's fetch lands (yesterday's events have
+        // all ended), that number is unknown, and a 0 would claim a clear day.
+        var known = Result != null && Result.Date == Fmt.IsoDate(Today());
+        var text = known ? Math.Min(Fmt.Remaining(events, now), 99).ToString() : "…";
 
         var live = Fmt.LiveEvent(events, now);
         var next = Fmt.NextEvent(events, now);

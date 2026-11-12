@@ -8,7 +8,7 @@ namespace AgendaTray;
 
 internal enum TrayGlyph
 {
-    /// <summary>Calendar page with today's day number: the quiet, default state.</summary>
+    /// <summary>Calendar page with how many events are left today: the quiet, default state.</summary>
     Day,
     /// <summary>Amber disc with the minutes left until the next meeting starts.</summary>
     Soon,
@@ -66,7 +66,7 @@ internal static class TrayIconRenderer
                 case TrayGlyph.Soon:
                     DrawDisc(g, size, Amber);
                     DrawText(g, text, Color.FromArgb(255, 0x1B, 0x1B, 0x1B),
-                        new RectangleF(size * 0.14f, size * 0.20f, size * 0.72f, size * 0.60f));
+                        new RectangleF(size * 0.12f, size * 0.17f, size * 0.76f, size * 0.66f));
                     break;
                 case TrayGlyph.Live:
                     DrawDisc(g, size, Red);
@@ -91,23 +91,26 @@ internal static class TrayIconRenderer
 
     private static void DrawCalendar(Graphics g, int size, Color fg, string text, Color textColor)
     {
+        // The shell gives a tray icon 16 px at 100% (20 at 125%) and shrinks anything
+        // larger, so the only way to a bigger number is to waste less of the square:
+        // the page runs almost to the edges and the binding strip is thin.
         float s = size;
         float stroke = Math.Max(1.2f, s / 14f);
-        var body = new RectangleF(s * 0.08f + stroke / 2, s * 0.12f + stroke / 2,
-            s * 0.84f - stroke, s * 0.82f - stroke);
-        using var path = RoundRect(body, s * 0.14f);
+        var body = new RectangleF(s * 0.02f + stroke / 2, s * 0.04f + stroke / 2,
+            s * 0.96f - stroke, s * 0.94f - stroke);
+        using var path = RoundRect(body, s * 0.16f);
         using (var pen = new Pen(fg, stroke))
             g.DrawPath(pen, path);
 
         // the binding strip across the top
-        var band = new RectangleF(body.X, body.Y, body.Width, body.Height * 0.24f);
+        var band = new RectangleF(body.X, body.Y, body.Width, body.Height * 0.18f);
         g.SetClip(path);
         using (var brush = new SolidBrush(fg))
             g.FillRectangle(brush, band);
         g.ResetClip();
 
-        var room = new RectangleF(body.X + stroke, band.Bottom + s * 0.03f,
-            body.Width - 2 * stroke, body.Bottom - band.Bottom - stroke - s * 0.05f);
+        var room = new RectangleF(body.X + stroke + s * 0.04f, band.Bottom + s * 0.06f,
+            body.Width - 2 * stroke - s * 0.08f, body.Bottom - band.Bottom - stroke - s * 0.12f);
         DrawText(g, text, textColor, room);
     }
 
