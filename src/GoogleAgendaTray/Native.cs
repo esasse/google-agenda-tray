@@ -144,7 +144,33 @@ internal static class Native
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
 
-    public static bool IsTopmost(IntPtr hWnd) => (GetWindowLongPtr(hWnd, -20 /* GWL_EXSTYLE */).ToInt64() & 0x8) != 0;
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
+
+    private const int GWL_EXSTYLE = -20;
+    private const long WS_EX_TOPMOST = 0x8, WS_EX_TOOLWINDOW = 0x80;
+
+    private static bool HasExStyle(IntPtr hWnd, long style) => (GetWindowLongPtr(hWnd, GWL_EXSTYLE).ToInt64() & style) != 0;
+
+    public static bool IsTopmost(IntPtr hWnd) => HasExStyle(hWnd, WS_EX_TOPMOST);
+
+    public static bool IsToolWindow(IntPtr hWnd) => HasExStyle(hWnd, WS_EX_TOOLWINDOW);
+
+    /// <summary>Marks a window as a tool window: window managers (GlazeWM, komorebi)
+    /// leave those alone instead of taking them over, centering them as floating
+    /// windows. Call it before the window is first shown. False if the style could
+    /// not be set.</summary>
+    public static bool MakeToolWindow(IntPtr hWnd)
+    {
+        Marshal.SetLastPInvokeError(0);
+        var old = SetWindowLongPtr(hWnd, GWL_EXSTYLE, (IntPtr)(GetWindowLongPtr(hWnd, GWL_EXSTYLE).ToInt64() | WS_EX_TOOLWINDOW));
+        if (old == IntPtr.Zero && Marshal.GetLastPInvokeError() != 0) return false;
+        // The frame is cached: without FRAMECHANGED the tool window frame metrics only
+        // apply on the next resize.
+        SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0,
+            0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | 0x0004 /* NOZORDER */ | 0x0010 /* NOACTIVATE */ | 0x0020 /* FRAMECHANGED */);
+        return true;
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);

@@ -46,6 +46,11 @@ public sealed partial class ReminderWindow : Window
         presenter.SetBorderAndTitleBar(true, false);
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
+        // A tiling window manager takes over every new application window: GlazeWM
+        // made the card a floating window and centered it on screen, and it only got
+        // to the corner on the next Sync. Tool windows are left where Place puts them.
+        if (!Native.MakeToolWindow(_hwnd))
+            Log.Write("reminder card: could not set the tool window style; a tiling window manager may take it over");
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico"));
         AppWindow.Closing += (_, e) =>
         {
@@ -161,6 +166,8 @@ public sealed partial class ReminderWindow : Window
         if (!AppWindow.IsVisible)
         {
             _zOrderLogs = 0;   // each card that comes up gets its own few log lines
+            if (!Native.IsToolWindow(_hwnd))
+                Log.Write($"reminder card had lost its tool window style; set again ({(Native.MakeToolWindow(_hwnd) ? "ok" : "failed")})");
             AppWindow.Show(false);
         }
         // To the front even when the card was already up under another always-on-top
