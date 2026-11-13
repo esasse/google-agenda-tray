@@ -32,6 +32,14 @@ internal sealed class AgendaEvent
     public string Key => Account + "|" + Id;
 }
 
+internal sealed class CalendarInfo
+{
+    public string Account { get; set; } = "";
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public bool Primary { get; set; }
+}
+
 internal sealed class AgendaResult
 {
     public bool Ok { get; set; }
@@ -46,6 +54,9 @@ internal sealed class AgendaResult
     /// calendar list or one calendar failed): the day shown is missing their part.</summary>
     public List<string> FailedAccounts { get; set; } = [];
     public List<string> Accounts { get; set; } = [];
+    /// <summary>Every calendar each account shows in Google Calendar's sidebar, ignored
+    /// ones included: what the tray menu offers to turn on and off.</summary>
+    public List<CalendarInfo> Calendars { get; set; } = [];
     public List<AgendaEvent> Events { get; set; } = [];
     public List<string> Errors { get; set; } = [];
 }

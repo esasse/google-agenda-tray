@@ -99,7 +99,7 @@ connected — the plain-text refresh token in each is encrypted on first read.
 |---|---|
 | left click | open/close the popup |
 | middle click | join the meeting in progress (or the next one) |
-| right click | menu: join, refresh, accounts, setup, calendars, configuration, log, quit |
+| right click | menu: join, refresh, which calendars to show, accounts, setup, configuration, log, quit |
 | `Ctrl+Win+A` | open/close the popup from anywhere |
 
 **In the popup**
@@ -160,8 +160,13 @@ configuration* in the tray menu opens it; *Reload configuration* applies it.
 }
 ```
 
-`aliases` renames the account on each row's second line. `ignore_calendars` takes the
-ids that *Show calendars and their ids* in the tray menu lists. `hotkey` accepts
+`aliases` renames the account on each row's second line. `ignore_calendars` lists the
+calendars left out of the agenda; you don't need to edit it by hand: *Calendars* in the
+tray menu has each account's calendars with a check mark, and unchecking one writes its
+id here and refreshes (the rest of the file is kept, its comments are not). Calendars
+hidden in Google Calendar's own sidebar are left out too and don't appear in that menu.
+A calendar shared with two of your accounts has one id, so it goes on or off in both.
+`hotkey` accepts
 `Ctrl`, `Alt`, `Shift`, `Win` and a letter, digit or `F1`–`F24`; an empty string turns
 it off. If the combination is taken by another program the app notes it in the log and
 runs without it.

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using AgendaTray.Google;
 
@@ -48,7 +47,8 @@ internal static class AgendaService
             return result;
         }
 
-        var (events, errors, reauth, failed) = await CollectAsync(day, settings, client, accounts, ct).ConfigureAwait(false);
+        var (events, errors, reauth, failed, calendars) = await CollectAsync(day, settings, client, accounts, ct).ConfigureAwait(false);
+        result.Calendars = calendars;
         result.Events = events;
         result.Errors = errors;
         result.Reauth = reauth;
@@ -68,18 +68,22 @@ internal static class AgendaService
                 cached.Stale = true;
                 cached.Errors = errors.Count > 0 ? errors : cached.Errors;
                 cached.Reauth = reauth;
+                // The calendar lists that did come back are newer than the cached ones.
+                if (calendars.Count > 0) cached.Calendars = calendars;
                 return cached;
             }
         }
         return result;
     }
 
-    private static async Task<(List<AgendaEvent> Events, List<string> Errors, List<string> Reauth, List<string> Failed)> CollectAsync(
+    private static async Task<(List<AgendaEvent> Events, List<string> Errors, List<string> Reauth, List<string> Failed,
+        List<CalendarInfo> Calendars)> CollectAsync(
         DateOnly day, Settings settings, OAuthClient client, List<Account> accounts, CancellationToken ct)
     {
         var dayStart = LocalMidnight(day);
         var dayEnd = LocalMidnight(day.AddDays(1));
         var events = new ConcurrentBag<AgendaEvent>();
+        var calendarsByAccount = new ConcurrentDictionary<string, List<CalendarInfo>>(StringComparer.OrdinalIgnoreCase);
         var errors = new ConcurrentQueue<string>();
         var reauth = new ConcurrentQueue<string>();
         // Accounts that brought back less than their whole day, for any reason.
@@ -117,13 +121,18 @@ internal static class AgendaService
             List<JsonElement> calendars;
             try
             {
-                calendars = await CalendarsAsync(token, settings, ct).ConfigureAwait(false);
+                calendars = await CalendarsAsync(token, ct).ConfigureAwait(false);
             }
             catch (ApiException ex)
             {
                 Fail($"{account.Email}: {ex.Message}");
                 return;
             }
+            calendarsByAccount[account.Email] = calendars
+                .Select(c => new CalendarInfo { Account = account.Email, Id = c.Str("id"), Name = CalendarName(c), Primary = c.Bool("primary") })
+                .OrderBy(c => !c.Primary).ThenBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+            calendars = calendars.Where(c => !settings.IgnoreCalendars.Contains(c.Str("id"))).ToList();
 
             using var gate = new SemaphoreSlim(6);
             await Task.WhenAll(calendars.Select(async cal =>
@@ -136,8 +145,7 @@ internal static class AgendaService
                 }
                 catch (ApiException ex)
                 {
-                    var name = cal.Str("summary") is { Length: > 0 } s ? s : cal.Str("id");
-                    Fail($"{account.Email} / {name}: {ex.Message}");
+                    Fail($"{account.Email} / {CalendarName(cal)}: {ex.Message}");
                 }
                 finally
                 {
@@ -162,11 +170,18 @@ internal static class AgendaService
         }
         // Sorted: the accounts are fetched in parallel, and finishing order would make
         // the same failures read differently from one refresh to the next.
+        var calendarList = accounts.SelectMany(a => calendarsByAccount.TryGetValue(a.Email, out var l) ? l : []).ToList();
         return (unique, errors.Order(StringComparer.Ordinal).ToList(), reauth.Distinct().Order(StringComparer.Ordinal).ToList(),
-            failed.Distinct().Order(StringComparer.Ordinal).ToList());
+            failed.Distinct().Order(StringComparer.Ordinal).ToList(), calendarList);
     }
 
-    public static async Task<List<JsonElement>> CalendarsAsync(string token, Settings settings, CancellationToken ct)
+    private static string CalendarName(JsonElement calendar) =>
+        calendar.Str("summaryOverride") is { Length: > 0 } o ? o
+        : calendar.Str("summary") is { Length: > 0 } s ? s
+        : calendar.Str("id");
+
+    /// <summary>The calendars Google Calendar's own sidebar shows, ignored ones included.</summary>
+    private static async Task<List<JsonElement>> CalendarsAsync(string token, CancellationToken ct)
     {
         var url = $"{GoogleApi.CalendarApi}/users/me/calendarList?" + GoogleApi.Query(
             ("maxResults", "250"),
@@ -180,7 +195,6 @@ internal static class AgendaService
             if (item.Bool("deleted")) continue;
             // Hidden in Google Calendar's own sidebar: hidden here too.
             if (item.TryGetProperty("selected", out var sel) && sel.ValueKind == JsonValueKind.False) continue;
-            if (settings.IgnoreCalendars.Contains(item.Str("id"))) continue;
             list.Add(item);
         }
         return list;
@@ -199,9 +213,7 @@ internal static class AgendaService
             ("fields", EventFields));
         var payload = await GoogleApi.GetAsync(url, token, ct).ConfigureAwait(false);
 
-        var calendarName = calendar.Str("summaryOverride") is { Length: > 0 } o ? o
-                         : calendar.Str("summary") is { Length: > 0 } s ? s
-                         : calendarId;
+        var calendarName = CalendarName(calendar);
         var list = new List<AgendaEvent>();
         foreach (var ev in payload.Arr("items"))
         {
@@ -340,40 +352,5 @@ internal static class AgendaService
         {
             Log.Write($"could not clear the cache: {ex.Message}");
         }
-    }
-
-    /// <summary>The "calendars" command: each account's visible calendars and their ids,
-    /// which is what ignore_calendars in config.json takes.</summary>
-    public static async Task<string> DescribeCalendarsAsync(Settings settings, CancellationToken ct)
-    {
-        var client = OAuthClient.Load();
-        var sb = new StringBuilder();
-        sb.AppendLine("Visible calendars per account. Copy an id into \"ignore_calendars\" in config.json to hide it.");
-        sb.AppendLine("P = the account's primary calendar.");
-        if (client == null)
-        {
-            sb.AppendLine().AppendLine("OAuth client not configured.");
-            return sb.ToString();
-        }
-        foreach (var account in AccountStore.List())
-        {
-            sb.AppendLine().AppendLine(account.Email);
-            try
-            {
-                var token = await GoogleApi.AccessTokenAsync(account, client, ct).ConfigureAwait(false);
-                foreach (var cal in await CalendarsAsync(token, new Settings(), ct).ConfigureAwait(false))
-                {
-                    var name = cal.Str("summaryOverride") is { Length: > 0 } o ? o : cal.Str("summary");
-                    var flag = cal.Bool("primary") ? "P" : " ";
-                    var ignored = settings.IgnoreCalendars.Contains(cal.Str("id")) ? "  (ignored)" : "";
-                    sb.AppendLine($"  {flag} {name}  <{cal.Str("id")}>{ignored}");
-                }
-            }
-            catch (ApiException ex)
-            {
-                sb.AppendLine($"  ! {ex.Message}");
-            }
-        }
-        return sb.ToString();
     }
 }

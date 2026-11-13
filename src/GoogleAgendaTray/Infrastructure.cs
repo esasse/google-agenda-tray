@@ -28,7 +28,6 @@ internal static class AppPaths
     public static string CacheDir => Path.Combine(Root, "cache");
     public static string ConfigFile => Path.Combine(Root, "config.json");
     public static string LogFile => Path.Combine(Root, "agenda.log");
-    public static string CalendarsFile => Path.Combine(Root, "calendars.txt");
 
     public static void Ensure()
     {

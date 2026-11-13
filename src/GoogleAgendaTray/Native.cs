@@ -19,7 +19,7 @@ internal static class Native
     public const int NIIF_INFO = 0x01, NIIF_WARNING = 0x02;
     public const int NOTIFYICON_VERSION_4 = 4;
 
-    public const uint MF_STRING = 0x0000, MF_GRAYED = 0x0001, MF_POPUP = 0x0010, MF_SEPARATOR = 0x0800;
+    public const uint MF_STRING = 0x0000, MF_GRAYED = 0x0001, MF_CHECKED = 0x0008, MF_POPUP = 0x0010, MF_SEPARATOR = 0x0800;
     public const uint TPM_RIGHTBUTTON = 0x0002, TPM_RETURNCMD = 0x0100;
 
     public const uint MB_YESNO = 0x04, MB_ICONQUESTION = 0x20, MB_SETFOREGROUND = 0x10000;

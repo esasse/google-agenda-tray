@@ -147,6 +147,7 @@ internal sealed class AgendaController : IDisposable
 
     private void Apply(AgendaResult result)
     {
+        DropIgnored(result);
         Result = result;
         // All of them: with two accounts down, naming one would hide the other. The
         // popup's status line trims it and shows the whole text on hover.
@@ -315,8 +316,9 @@ internal sealed class AgendaController : IDisposable
 
     private enum Cmd
     {
-        Open = 1, Refresh, Join, Calendar, AddAccount, Setup, Calendars, Config, ReloadConfig, LogFile, Quit,
+        Open = 1, Refresh, Join, Calendar, AddAccount, Setup, Config, ReloadConfig, LogFile, Quit,
         RemoveAccount = 100,
+        ToggleCalendar = 1000,
     }
 
     private void ShowMenu()
@@ -330,6 +332,11 @@ internal sealed class AgendaController : IDisposable
         for (var i = 0; i < accounts.Count; i++)
             accountItems.Add(new MenuEntry($"Remove {accounts[i].Email}…", (int)Cmd.RemoveAccount + i));
 
+        var calendars = Result?.Calendars ?? [];
+        var calendarsEntry = accounts.Count == 0
+            ? new MenuEntry("Calendars", Enabled: false)
+            : new MenuEntry("Calendars", Children: CalendarMenu(accounts, calendars));
+
         var joinText = focus == null ? "Join the next meeting"
             : $"Join: {Fmt.ShortTitle(focus.Title, 40)}";
         var entries = new List<MenuEntry>
@@ -339,9 +346,9 @@ internal sealed class AgendaController : IDisposable
             new("Refresh now", (int)Cmd.Refresh),
             MenuEntry.Separator,
             new("Open Google Calendar", (int)Cmd.Calendar),
+            calendarsEntry,
             new("Accounts", Children: accountItems),
             new("Set up Google access…", (int)Cmd.Setup),
-            new("Show calendars and their ids", (int)Cmd.Calendars, Enabled: accounts.Count > 0),
             MenuEntry.Separator,
             new("Edit configuration", (int)Cmd.Config),
             new("Reload configuration", (int)Cmd.ReloadConfig),
@@ -359,16 +366,96 @@ internal sealed class AgendaController : IDisposable
             case Cmd.Calendar: OpenInCalendar(null); break;
             case Cmd.AddAccount: StartLogin(); break;
             case Cmd.Setup: Setup(); break;
-            case Cmd.Calendars: ShowCalendars(); break;
             case Cmd.Config: Shell.Edit(AppPaths.ConfigFile); break;
             case Cmd.ReloadConfig: ReloadSettings(); break;
             case Cmd.LogFile: Shell.Edit(AppPaths.LogFile); break;
             case Cmd.Quit: Quit(); break;
+            case >= Cmd.ToggleCalendar:
+                var calendar = chosen - (int)Cmd.ToggleCalendar;
+                if (calendar < calendars.Count) ToggleCalendar(calendars[calendar]);
+                break;
             default:
                 var index = chosen - (int)Cmd.RemoveAccount;
                 if (index >= 0 && index < accounts.Count) RemoveAccount(accounts[index]);
                 break;
         }
+    }
+
+    /// <summary>
+    /// One check mark per calendar, from the last fetch: opening the menu must not wait
+    /// on the network. With several accounts each gets its own submenu. Ids are
+    /// ToggleCalendar + the calendar's index in <paramref name="calendars"/>.
+    /// </summary>
+    private List<MenuEntry> CalendarMenu(List<Account> accounts, List<CalendarInfo> calendars)
+    {
+        List<MenuEntry> ForAccount(string email)
+        {
+            var items = new List<MenuEntry>();
+            for (var i = 0; i < calendars.Count; i++)
+            {
+                var cal = calendars[i];
+                if (!string.Equals(cal.Account, email, StringComparison.OrdinalIgnoreCase)) continue;
+                items.Add(new MenuEntry(MenuEntry.Literal(cal.Name), (int)Cmd.ToggleCalendar + i,
+                    Checked: !Settings.IgnoreCalendars.Contains(cal.Id)));
+            }
+            if (items.Count == 0)
+            {
+                // Before the first fetch, or this account's calendar list failed.
+                var why = Loading || Result == null ? "Loading…" : "Could not load this account's calendars";
+                items.Add(new MenuEntry(why, Enabled: false));
+            }
+            return items;
+        }
+
+        var menu = accounts.Count == 1
+            ? ForAccount(accounts[0].Email)
+            : accounts.Select(a => new MenuEntry(MenuEntry.Literal(a.Email), Children: ForAccount(a.Email))).ToList();
+        menu.Add(MenuEntry.Separator);
+        // Without this, a calendar unchecked in Google Calendar looks like a bug here.
+        menu.Add(new MenuEntry("Calendars hidden in Google Calendar are not listed", Enabled: false));
+        return menu;
+    }
+
+    /// <summary>
+    /// Turns a calendar on or off: ignore_calendars in config.json, the same key
+    /// omarchy-agenda reads. Ids are global, so a calendar shared with two of your
+    /// accounts goes on or off in both.
+    /// </summary>
+    private void ToggleCalendar(CalendarInfo calendar)
+    {
+        // The opposite of the check mark the menu showed.
+        var hide = !Settings.IgnoreCalendars.Contains(calendar.Id);
+        try
+        {
+            Settings.SetCalendarIgnored(calendar.Id, hide);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"could not save ignore_calendars: {ex.Message}");
+            _tray.Balloon("Could not change the calendars", $"config.json: {Log.OneLine(ex.Message)}", warning: true);
+            return;
+        }
+        Log.Write($"calendar {(hide ? "hidden" : "shown")}: {calendar.Name}");
+        ReloadSettings();
+        // Gone from the list right away; one shown again needs the fetch ReloadSettings
+        // started. Redrawn here: with a fetch already in flight, Refresh draws nothing.
+        if (Result != null)
+        {
+            DropIgnored(Result);
+            Changed();
+        }
+    }
+
+    /// <summary>
+    /// Leaves out the events of ignored calendars. The fetch already skips them, but a
+    /// result can predate the current list: a fetch started before a calendar was
+    /// unchecked, or the cached day DayAsync falls back to with the network down.
+    /// </summary>
+    private void DropIgnored(AgendaResult result)
+    {
+        if (Settings.IgnoreCalendars.Count == 0) return;
+        var ignored = Settings.IgnoreCalendars.ToHashSet();
+        result.Events = result.Events.Where(e => !ignored.Contains(e.CalendarId)).ToList();
     }
 
     private void RegisterHotkey()
@@ -525,21 +612,6 @@ internal sealed class AgendaController : IDisposable
             Log.Write($"removing {account.Email} failed: {ex.Message}");
         }
         Refresh(force: true);
-    }
-
-    private async void ShowCalendars()
-    {
-        try
-        {
-            var settings = Settings;
-            var text = await Task.Run(() => AgendaService.DescribeCalendarsAsync(settings, CancellationToken.None));
-            File.WriteAllText(AppPaths.CalendarsFile, text);
-            Shell.Edit(AppPaths.CalendarsFile);
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"listing calendars failed: {ex.Message}");
-        }
     }
 
     public void Quit()

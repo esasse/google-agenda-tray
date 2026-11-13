@@ -4,9 +4,13 @@ using System.Runtime.InteropServices;
 namespace AgendaTray;
 
 internal sealed record MenuEntry(string Text, int Id = 0, bool Enabled = true, bool IsDefault = false,
-    IReadOnlyList<MenuEntry>? Children = null)
+    IReadOnlyList<MenuEntry>? Children = null, bool Checked = false)
 {
     public static readonly MenuEntry Separator = new("-");
+
+    /// <summary>Text from outside (a calendar's name) shown as is: a lone &amp; in a
+    /// menu marks the next letter as the access key and disappears.</summary>
+    public static string Literal(string text) => text.Replace("&", "&&");
 }
 
 /// <summary>
@@ -178,7 +182,7 @@ internal sealed class TrayHost : IDisposable
             }
             else
             {
-                var flags = Native.MF_STRING | (entry.Enabled ? 0 : Native.MF_GRAYED);
+                var flags = Native.MF_STRING | (entry.Enabled ? 0 : Native.MF_GRAYED) | (entry.Checked ? Native.MF_CHECKED : 0);
                 Native.AppendMenuW(menu, flags, (UIntPtr)(uint)entry.Id, entry.Text);
                 if (entry.IsDefault) Native.SetMenuDefaultItem(menu, (uint)entry.Id, 0);
             }
