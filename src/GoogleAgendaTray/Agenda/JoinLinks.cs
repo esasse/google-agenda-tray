@@ -8,16 +8,22 @@ namespace AgendaTray.Agenda;
 /// <summary>Finds the video-call link of an event. Ported from the helper's find_join.</summary>
 internal static partial class JoinLinks
 {
+    // Subdomains are allowed (us02web.zoom.us, company.webex.com) but only as whole
+    // labels ending in a dot: a host that merely ends in the name, like evilzoom.us,
+    // must not pass for the real thing and get a join button. Hosts are case-insensitive,
+    // so HTTPS://US02WEB.ZOOM.US/j/... is the same link and must match too.
+    private const RegexOptions Opts = RegexOptions.Compiled | RegexOptions.IgnoreCase;
+
     private static readonly (string Kind, Regex Pattern)[] Patterns =
     [
-        ("meet", new Regex(@"https://meet\.google\.com/[A-Za-z0-9?=&_\-/.]+", RegexOptions.Compiled)),
-        ("zoom", new Regex(@"https://[A-Za-z0-9.\-]*zoom\.us/(?:j|my|w|s)/[^\s<>""']+", RegexOptions.Compiled)),
-        ("teams", new Regex(@"https://teams\.(?:microsoft|live)\.com/(?:l/meetup-join|meet)/[^\s<>""']+", RegexOptions.Compiled)),
-        ("webex", new Regex(@"https://[A-Za-z0-9.\-]*webex\.com/[^\s<>""']+", RegexOptions.Compiled)),
-        ("whereby", new Regex(@"https://whereby\.com/[^\s<>""']+", RegexOptions.Compiled)),
-        ("jitsi", new Regex(@"https://meet\.jit\.si/[^\s<>""']+", RegexOptions.Compiled)),
-        ("chime", new Regex(@"https://[A-Za-z0-9.\-]*chime\.aws/[^\s<>""']+", RegexOptions.Compiled)),
-        ("slack", new Regex(@"https://app\.slack\.com/huddle/[^\s<>""']+", RegexOptions.Compiled)),
+        ("meet", new Regex(@"https://meet\.google\.com/[A-Za-z0-9?=&_\-/.]+", Opts)),
+        ("zoom", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*zoom\.us/(?:j|my|w|s)/[^\s<>""']+", Opts)),
+        ("teams", new Regex(@"https://teams\.(?:microsoft|live)\.com/(?:l/meetup-join|meet)/[^\s<>""']+", Opts)),
+        ("webex", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*webex\.com/[^\s<>""']+", Opts)),
+        ("whereby", new Regex(@"https://whereby\.com/[^\s<>""']+", Opts)),
+        ("jitsi", new Regex(@"https://meet\.jit\.si/[^\s<>""']+", Opts)),
+        ("chime", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*chime\.aws/[^\s<>""']+", Opts)),
+        ("slack", new Regex(@"https://app\.slack\.com/huddle/[^\s<>""']+", Opts)),
     ];
 
     public static (string Url, string Kind) Find(JsonElement ev)
@@ -46,14 +52,25 @@ internal static partial class JoinLinks
 
     private static string ConferenceKind(string uri, JsonElement conf)
     {
-        var lowered = uri.ToLowerInvariant();
-        if (lowered.Contains("meet.google.com")) return "meet";
-        if (lowered.Contains("zoom.us")) return "zoom";
-        if (lowered.Contains("teams.")) return "teams";
-        if (lowered.Contains("webex.com")) return "webex";
+        // Same rule as the patterns above: judge the host, not a substring of the whole
+        // URL, or evilzoom.us (or ?next=zoom.us) would be labelled as Zoom.
+        var host = Uri.TryCreate(uri, UriKind.Absolute, out var parsed) ? parsed.Host : "";
+        if (IsHost(host, "meet.google.com")) return "meet";
+        if (IsHost(host, "zoom.us")) return "zoom";
+        if (host.StartsWith("teams.", StringComparison.OrdinalIgnoreCase) || host.Contains(".teams.", StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsHost(host, "microsoft.com") || IsHost(host, "live.com") || IsHost(host, "microsoft.us")) return "teams";
+        }
+        if (IsHost(host, "webex.com")) return "webex";
+        if (IsHost(host, "chime.aws")) return "chime";
         var solution = conf.Obj("conferenceSolution").Str("name").ToLowerInvariant();
         return solution.Length > 0 ? solution.Split(' ')[0] : "other";
     }
+
+    /// <summary>True when <paramref name="host"/> is <paramref name="domain"/> or a whole-label subdomain of it.</summary>
+    private static bool IsHost(string host, string domain) =>
+        host.Equals(domain, StringComparison.OrdinalIgnoreCase)
+        || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
 
     private static string PlainText(string html)
     {
