@@ -19,6 +19,8 @@ internal sealed class AgendaController : IDisposable
     private readonly TrayHost _tray;
     private readonly PopupWindow _popup;
     private readonly ReminderWindow _reminders;
+    // Made on first use: most sessions never open it.
+    private MonthWindow? _month;
     // Reminders already shown today, by ReminderWindow.KeyOf: dismissing one must not
     // bring it back on the next tick. A moved event has a new key and is reminded again.
     private readonly HashSet<string> _reminded = [];
@@ -61,7 +63,11 @@ internal sealed class AgendaController : IDisposable
 
         _pollTimer = dispatcher.CreateTimer();
         _pollTimer.Interval = TimeSpan.FromSeconds(Settings.RefreshIntervalSec);
-        _pollTimer.Tick += (_, _) => Refresh(force: true);
+        _pollTimer.Tick += (_, _) =>
+        {
+            Refresh(force: true);
+            _month?.Poll();
+        };
 
         // Keeps the countdowns alive without hitting the API; also notices a new day,
         // a resume from sleep, and a meeting about to start.
@@ -178,6 +184,31 @@ internal sealed class AgendaController : IDisposable
         Log.Write($"retrying in {delay}s");
     }
 
+    /// <summary>A stretch of days for the month view, with the same calendars left out
+    /// as the day. Throws on a timeout; the per-account failures come in the result.</summary>
+    public async Task<AgendaResult> RangeAsync(DateOnly from, DateOnly to)
+    {
+        var settings = Settings;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var result = await Task.Run(() => AgendaService.RangeAsync(from, to, settings, cts.Token));
+        DropIgnored(result);
+        return result;
+    }
+
+    public void ShowMonth()
+    {
+        _popup.HidePopup();
+        try
+        {
+            _month ??= new MonthWindow(this);
+            _month.ShowMonth();
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"error opening the month view: {ex}");
+        }
+    }
+
     private void OnClock()
     {
         var now = DateTimeOffset.Now;
@@ -190,6 +221,7 @@ internal sealed class AgendaController : IDisposable
             Refresh(force: true);
         }
         _lastTick = now;
+        _month?.Tick();
 
         // Once per day: if that fetch fails, the retry backoff takes over instead of
         // a new attempt on every tick.
@@ -316,7 +348,7 @@ internal sealed class AgendaController : IDisposable
 
     private enum Cmd
     {
-        Open = 1, Refresh, Join, Calendar, AddAccount, Setup, Config, ReloadConfig, LogFile, Quit,
+        Open = 1, Month, Refresh, Join, Calendar, AddAccount, Setup, Config, ReloadConfig, LogFile, Quit,
         RemoveAccount = 100,
         ToggleCalendar = 1000,
     }
@@ -342,6 +374,7 @@ internal sealed class AgendaController : IDisposable
         var entries = new List<MenuEntry>
         {
             new("Open agenda", (int)Cmd.Open, IsDefault: true),
+            new("Month view", (int)Cmd.Month),
             new(joinText, (int)Cmd.Join, Enabled: focus != null),
             new("Refresh now", (int)Cmd.Refresh),
             MenuEntry.Separator,
@@ -361,6 +394,7 @@ internal sealed class AgendaController : IDisposable
         switch ((Cmd)chosen)
         {
             case Cmd.Open: _popup.ShowPopup(); break;
+            case Cmd.Month: ShowMonth(); break;
             case Cmd.Refresh: _retryCount = 0; Refresh(force: true); break;
             case Cmd.Join: JoinFocused(); break;
             case Cmd.Calendar: OpenInCalendar(null); break;
@@ -451,7 +485,7 @@ internal sealed class AgendaController : IDisposable
     /// result can predate the current list: a fetch started before a calendar was
     /// unchecked, or the cached day DayAsync falls back to with the network down.
     /// </summary>
-    private void DropIgnored(AgendaResult result)
+    internal void DropIgnored(AgendaResult result)
     {
         if (Settings.IgnoreCalendars.Count == 0) return;
         var ignored = Settings.IgnoreCalendars.ToHashSet();
@@ -484,6 +518,7 @@ internal sealed class AgendaController : IDisposable
         RegisterHotkey();
         Log.Write("configuration reloaded");
         Refresh(force: true);
+        _month?.Invalidate();
     }
 
     // ---------------------------------------------------------------- actions
@@ -515,6 +550,7 @@ internal sealed class AgendaController : IDisposable
         {
             OAuthClient.FromFile(path).Save();
             Log.Write($"OAuth client stored from {Path.GetFileName(path)}");
+            _month?.Invalidate();
             if (AccountStore.List().Count == 0) StartLogin();
             else Refresh(force: true);
         }
@@ -567,6 +603,7 @@ internal sealed class AgendaController : IDisposable
             _loginCts.Dispose();
             _loginCts = null;
             Refresh(force: true);
+            _month?.Invalidate();
         }
         catch (OperationCanceledException)
         {
@@ -612,6 +649,7 @@ internal sealed class AgendaController : IDisposable
             Log.Write($"removing {account.Email} failed: {ex.Message}");
         }
         Refresh(force: true);
+        _month?.Invalidate();
     }
 
     public void Quit()
@@ -630,6 +668,7 @@ internal sealed class AgendaController : IDisposable
         _tray.Dispose();
         _popup.CloseForGood();
         _reminders.CloseForGood();
+        _month?.CloseForGood();
     }
 }
 

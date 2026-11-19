@@ -251,7 +251,7 @@ public sealed partial class PopupWindow : Window
             EmptyText.Text = result == null ? "Loading…"
                 : result.Errors.Count > 0 ? "Could not reach Google."
                 : "Nothing scheduled today.";
-            FooterText.Text = "Enter join · J next · R refresh · O open in Calendar · L add account";
+            FooterText.Text = "Enter join · J next · M month · R refresh · O open in Calendar · L add account";
         }
         else
         {
@@ -359,6 +359,8 @@ public sealed partial class PopupWindow : Window
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => _app.Refresh(force: true);
 
+    private void Month_Click(object sender, RoutedEventArgs e) => _app.ShowMonth();
+
     private async void SetupPrimary_Click(object sender, RoutedEventArgs e)
     {
         switch (_setupMode)
@@ -437,6 +439,10 @@ public sealed partial class PopupWindow : Window
             case VirtualKey.O when !inSetup:
                 HidePopup();
                 _app.OpenInCalendar((EventsList.SelectedItem as EventItem)?.Event);
+                e.Handled = true;
+                break;
+            case VirtualKey.M when !inSetup:
+                _app.ShowMonth();
                 e.Handled = true;
                 break;
             case VirtualKey.L when _setupMode is SetupMode.None or SetupMode.NeedsAccount:

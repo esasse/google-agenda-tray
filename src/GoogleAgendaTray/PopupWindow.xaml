@@ -20,6 +20,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <FontIcon x:Name="HeaderIcon" Glyph="&#xE787;" FontSize="26" VerticalAlignment="Center" />
@@ -34,7 +35,13 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
             </StackPanel>
 
-            <Grid Grid.Column="2" Width="36" Height="36" VerticalAlignment="Center">
+            <Button Grid.Column="2" Width="36" Height="36" Padding="0" VerticalAlignment="Center"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTipService.ToolTip="Month view (M)" Click="Month_Click">
+                <FontIcon Glyph="&#xE80A;" FontSize="14" />
+            </Button>
+
+            <Grid Grid.Column="3" Width="36" Height="36" VerticalAlignment="Center">
                 <Button x:Name="RefreshButton" Width="36" Height="36" Padding="0"
                         Background="Transparent" BorderThickness="0"
                         ToolTipService.ToolTip="Refresh (R)" Click="Refresh_Click">

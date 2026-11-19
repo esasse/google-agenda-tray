@@ -25,15 +25,44 @@ internal static class AgendaService
 
     public static async Task<AgendaResult> DayAsync(DateOnly day, Settings settings, CancellationToken ct)
     {
+        var result = await RangeAsync(day, day.AddDays(1), settings, ct).ConfigureAwait(false);
+        if (result.NeedsSetup || result.Accounts.Count == 0) return result;
+
+        if (result.Ok && result.Errors.Count == 0)
+        {
+            SaveCache(result);
+        }
+        else if (result.Events.Count == 0)
+        {
+            var cached = LoadCache(day);
+            if (cached is { Events.Count: > 0 })
+            {
+                cached.Stale = true;
+                cached.Errors = result.Errors.Count > 0 ? result.Errors : cached.Errors;
+                cached.Reauth = result.Reauth;
+                // The calendar lists that did come back are newer than the cached ones.
+                if (result.Calendars.Count > 0) cached.Calendars = result.Calendars;
+                return cached;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Every event that touches [<paramref name="from"/>, <paramref name="to"/>): the day
+    /// is a range of one, and the month view asks for the weeks it shows. Only the day is
+    /// cached on disk (DayAsync), since only today's file is ever read back.
+    /// </summary>
+    public static async Task<AgendaResult> RangeAsync(DateOnly from, DateOnly to, Settings settings, CancellationToken ct)
+    {
         var client = OAuthClient.Load();
         var accounts = AccountStore.List();
         var result = new AgendaResult
         {
-            Date = Fmt.IsoDate(day),
+            Date = Fmt.IsoDate(from),
             GeneratedAt = DateTimeOffset.Now,
             Accounts = accounts.Select(a => a.Email).ToList(),
         };
-
         if (client == null)
         {
             result.NeedsSetup = true;
@@ -47,7 +76,8 @@ internal static class AgendaService
             return result;
         }
 
-        var (events, errors, reauth, failed, calendars) = await CollectAsync(day, settings, client, accounts, ct).ConfigureAwait(false);
+        var (events, errors, reauth, failed, calendars) =
+            await CollectAsync(LocalMidnight(from), LocalMidnight(to), settings, client, accounts, ct).ConfigureAwait(false);
         result.Calendars = calendars;
         result.Events = events;
         result.Errors = errors;
@@ -55,33 +85,14 @@ internal static class AgendaService
         result.FailedAccounts = failed;
         result.NeedsLogin = reauth.Count > 0 && reauth.Count == accounts.Count;
         result.Ok = errors.Count == 0 || events.Count > 0;
-
-        if (result.Ok && errors.Count == 0)
-        {
-            SaveCache(result);
-        }
-        else if (events.Count == 0)
-        {
-            var cached = LoadCache(day);
-            if (cached is { Events.Count: > 0 })
-            {
-                cached.Stale = true;
-                cached.Errors = errors.Count > 0 ? errors : cached.Errors;
-                cached.Reauth = reauth;
-                // The calendar lists that did come back are newer than the cached ones.
-                if (calendars.Count > 0) cached.Calendars = calendars;
-                return cached;
-            }
-        }
         return result;
     }
 
     private static async Task<(List<AgendaEvent> Events, List<string> Errors, List<string> Reauth, List<string> Failed,
         List<CalendarInfo> Calendars)> CollectAsync(
-        DateOnly day, Settings settings, OAuthClient client, List<Account> accounts, CancellationToken ct)
+        DateTimeOffset rangeStart, DateTimeOffset rangeEnd, Settings settings, OAuthClient client, List<Account> accounts,
+        CancellationToken ct)
     {
-        var dayStart = LocalMidnight(day);
-        var dayEnd = LocalMidnight(day.AddDays(1));
         var events = new ConcurrentBag<AgendaEvent>();
         var calendarsByAccount = new ConcurrentDictionary<string, List<CalendarInfo>>(StringComparer.OrdinalIgnoreCase);
         var errors = new ConcurrentQueue<string>();
@@ -140,7 +151,7 @@ internal static class AgendaService
                 await gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    foreach (var e in await EventsAsync(account.Email, label, token, cal, dayStart, dayEnd, settings, ct).ConfigureAwait(false))
+                    foreach (var e in await EventsAsync(account.Email, label, token, cal, rangeStart, rangeEnd, settings, ct).ConfigureAwait(false))
                         events.Add(e);
                 }
                 catch (ApiException ex)
@@ -201,25 +212,43 @@ internal static class AgendaService
     }
 
     private static async Task<List<AgendaEvent>> EventsAsync(string email, string label, string token, JsonElement calendar,
-        DateTimeOffset dayStart, DateTimeOffset dayEnd, Settings settings, CancellationToken ct)
+        DateTimeOffset rangeStart, DateTimeOffset rangeEnd, Settings settings, CancellationToken ct)
     {
         var calendarId = calendar.Str("id");
-        var url = $"{GoogleApi.CalendarApi}/calendars/{Uri.EscapeDataString(calendarId)}/events?" + GoogleApi.Query(
-            ("timeMin", Rfc3339(dayStart)),
-            ("timeMax", Rfc3339(dayEnd)),
-            ("singleEvents", "true"),
-            ("orderBy", "startTime"),
-            ("maxResults", "100"),
-            ("fields", EventFields));
-        var payload = await GoogleApi.GetAsync(url, token, ct).ConfigureAwait(false);
+        // A day fits in one page; a month of a busy calendar may not, and a page cut
+        // short would silently drop the end of the month.
+        var items = new List<JsonElement>();
+        var pageToken = "";
+        for (var page = 0; page < 20; page++)
+        {
+            var query = new List<(string, string)>
+            {
+                ("timeMin", Rfc3339(rangeStart)),
+                ("timeMax", Rfc3339(rangeEnd)),
+                ("singleEvents", "true"),
+                ("orderBy", "startTime"),
+                ("maxResults", "250"),
+                ("fields", "nextPageToken," + EventFields),
+            };
+            if (pageToken.Length > 0) query.Add(("pageToken", pageToken));
+            var url = $"{GoogleApi.CalendarApi}/calendars/{Uri.EscapeDataString(calendarId)}/events?" + GoogleApi.Query([.. query]);
+            var payload = await GoogleApi.GetAsync(url, token, ct).ConfigureAwait(false);
+            items.AddRange(payload.Arr("items"));
+            pageToken = payload.Str("nextPageToken");
+            if (pageToken.Length == 0) break;
+        }
+        if (pageToken.Length > 0)
+            Log.Write($"{email} / {CalendarName(calendar)}: more than 20 pages of events; the rest is left out");
 
         var calendarName = CalendarName(calendar);
         var list = new List<AgendaEvent>();
-        foreach (var ev in payload.Arr("items"))
+        foreach (var ev in items)
         {
             if (ev.Str("status") == "cancelled") continue;
-            var (start, allDay) = ParseWhen(ev.Obj("start"), dayStart);
-            var (end, _) = ParseWhen(ev.Obj("end"), dayEnd);
+            var (start, allDay) = ParseWhen(ev.Obj("start"), rangeStart);
+            // No end: the end of the day it starts, as when every fetch was one day. The
+            // range's end would stretch it across the whole month grid.
+            var (end, _) = ParseWhen(ev.Obj("end"), LocalMidnight(DateOnly.FromDateTime(start.LocalDateTime).AddDays(1)));
             if (allDay && !settings.IncludeAllDay) continue;
             var status = MyStatus(ev);
             if (settings.HideDeclined && status == "declined") continue;

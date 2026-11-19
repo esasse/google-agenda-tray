@@ -99,7 +99,7 @@ connected — the plain-text refresh token in each is encrypted on first read.
 |---|---|
 | left click | open/close the popup |
 | middle click | join the meeting in progress (or the next one) |
-| right click | menu: join, refresh, which calendars to show, accounts, setup, configuration, log, quit |
+| right click | menu: month view, join, refresh, which calendars to show, accounts, setup, configuration, log, quit |
 | `Ctrl+Win+A` | open/close the popup from anywhere |
 
 **In the popup**
@@ -109,6 +109,7 @@ connected — the plain-text refresh token in each is encrypted on first read.
 | `↑` `↓` | move |
 | `Enter` or click | join the selected meeting |
 | `J` | join the current / next meeting |
+| `M` | open the month view |
 | `R` | refresh |
 | `O` | open the selected event in Google Calendar |
 | `L` | connect another account |
@@ -128,6 +129,33 @@ Whereby, Jitsi, Chime and Slack huddle links are recognised, including ones that
 exist inside the description.
 
 Launching the app again while it runs opens its popup instead of a second copy.
+
+**Month view**
+
+`M` in the popup (or the grid button next to refresh, or *Month view* in the tray menu)
+opens the month in a window of its own, like Google Calendar's month: each day with its
+events in the calendar's colour — all-day and multi-day events as one continuous bar
+across their days (square-ended where they go on into the week before or after), the
+rest with their start time — and `+N more` when a day has more than fits. The selected day is
+listed in full on the side, with times, account, calendar and place, and how much of it
+is booked (overlaps counted once; all-day and day-long events left out). It is an
+ordinary window: it stays open while you work elsewhere, Alt+Tab finds it, and closing it
+only hides it. In a narrow window (a tiling window manager's column) the side panel
+steps aside and the cells drop the times; hovering an event still shows everything.
+The week starts on the day your Windows region says.
+
+| Key | Effect |
+|---|---|
+| `←` `→` `↑` `↓` | previous / next day, week |
+| `Page Up` `Page Down` | previous / next month |
+| `T` | today |
+| `Enter` or double click | open the selected day in Google Calendar |
+| click on an event (side panel) | open it in Google Calendar |
+| `R` | refresh |
+| `Esc` | close |
+
+The month is fetched when the window opens and every three minutes while it is up;
+months already seen show at once and refresh behind. Only today is cached on disk.
 
 **Reminders**
 

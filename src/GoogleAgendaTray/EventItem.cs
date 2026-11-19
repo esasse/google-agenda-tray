@@ -52,6 +52,20 @@ public sealed class EventItem : INotifyPropertyChanged
 
     public Visibility JoinVisibility => Fmt.IsJoinable(Event, _now) ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>The month view's side panel: the times, or the dates of an event
+    /// spanning days.</summary>
+    public string SpanText => MonthModel.PanelTime(Event);
+
+    public string PanelTooltip => Event.Title + "\n" + SpanText + "\n" + Meta;
+
+    /// <summary>The month view lists every day; a call is only worth a button on today's.
+    /// Covers, not just a start before today: an all-day event is always "joinable", and
+    /// one from last week would keep its button.</summary>
+    public Visibility TodayJoinVisibility =>
+        Fmt.IsJoinable(Event, _now) && MonthModel.Covers(Event, DateOnly.FromDateTime(_now.LocalDateTime))
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
     public string JoinTooltip =>
         "Join " + Fmt.JoinName(Event.JoinKind) +
         (!string.IsNullOrEmpty(Event.OpenAs) && !string.Equals(Event.OpenAs, Event.Account, StringComparison.OrdinalIgnoreCase)
@@ -76,7 +90,7 @@ public sealed class EventItem : INotifyPropertyChanged
             ? b
             : new SolidColorBrush(Colors.Gray);
 
-    private static Windows.UI.Color? TryParseColor(string hex)
+    internal static Windows.UI.Color? TryParseColor(string hex)
     {
         if (string.IsNullOrEmpty(hex) || hex[0] != '#' || hex.Length != 7) return null;
         try
