@@ -126,7 +126,12 @@ tooltip says so (`Join Google Meet as work@company.com`). This only applies to s
 calendars you can edit; a colleague's calendar shared with you to read opens under the
 connected account, since its owner is never signed in to your browser. Meet, Zoom, Teams, Webex,
 Whereby, Jitsi, Chime and Slack huddle links are recognised, including ones that only
-exist inside the description.
+exist inside the description. A link counts only on the provider's own domain or a
+subdomain of it (`us02web.zoom.us` yes, `evilzoom.us` no), over https, and for Webex only
+in its join formats, not the call-in or setup pages an invite also carries. The call link
+Google attaches to the event must be on one of the same hosts, over https: one from any
+other provider is skipped, and the button falls back to a link in the description or,
+with none, opens the event in Google Calendar, where the link is.
 
 Launching the app again while it runs opens its popup instead of a second copy.
 

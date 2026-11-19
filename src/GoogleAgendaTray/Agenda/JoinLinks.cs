@@ -17,9 +17,16 @@ internal static partial class JoinLinks
     private static readonly (string Kind, Regex Pattern)[] Patterns =
     [
         ("meet", new Regex(@"https://meet\.google\.com/[A-Za-z0-9?=&_\-/.]+", Opts)),
-        ("zoom", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*zoom\.us/(?:j|my|w|s)/[^\s<>""']+", Opts)),
-        ("teams", new Regex(@"https://teams\.(?:microsoft|live)\.com/(?:l/meetup-join|meet)/[^\s<>""']+", Opts)),
-        ("webex", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*webex\.com/[^\s<>""']+", Opts)),
+        // The hosts here are the ones KnownKind below accepts in the conference data
+        // (bar classic Hangouts, which only Google's own fields carry), so a link is
+        // judged alike in both places.
+        ("zoom", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*zoom(?:\.us|gov\.com)/(?:j|my|w|s)/[^\s<>""']+", Opts)),
+        ("teams", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*teams\.(?:microsoft\.com|live\.com|cloud\.microsoft|microsoft\.us)/(?:l/meetup-join|meet)/[^\s<>""']+", Opts)),
+        // Only Webex's join links: personal rooms (/meet/, /join/), meetings, events and
+        // Event Center (<site>/j.php, e.php, onstage/g.php) and the web app. An invite
+        // also carries call-in numbers, setup and system-check pages on the same host,
+        // and none of them is a meeting.
+        ("webex", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*webex\.com/(?:meet/|join/|(?:[A-Za-z0-9_\-]+/)*[jeg]\.php\?|wbxmjs/joinservice/|webappng/sites/)[^\s<>""']+", Opts)),
         ("whereby", new Regex(@"https://whereby\.com/[^\s<>""']+", Opts)),
         ("jitsi", new Regex(@"https://meet\.jit\.si/[^\s<>""']+", Opts)),
         ("chime", new Regex(@"https://(?:[A-Za-z0-9-]+\.)*chime\.aws/[^\s<>""']+", Opts)),
@@ -28,15 +35,15 @@ internal static partial class JoinLinks
 
     public static (string Url, string Kind) Find(JsonElement ev)
     {
-        var conf = ev.Obj("conferenceData");
-        foreach (var entry in conf.Arr("entryPoints"))
+        // The conference data is trusted no more than the description: a video link
+        // gets the join button only on the host of a provider the app knows, over
+        // https. Anything else (a provider not listed, or a planted link) falls through
+        // to the description, and the event still opens in Google Calendar.
+        foreach (var entry in ev.Obj("conferenceData").Arr("entryPoints"))
         {
-            var uri = entry.Str("uri");
-            if (entry.Str("entryPointType") == "video" && uri.Length > 0)
-                return (uri, ConferenceKind(uri, conf));
+            if (entry.Str("entryPointType") == "video" && Known(entry.Str("uri")) is { Kind.Length: > 0 } found) return found;
         }
-        var hangout = ev.Str("hangoutLink");
-        if (hangout.Length > 0) return (hangout, "meet");
+        if (Known(ev.Str("hangoutLink")) is { Kind: "meet" } hangout) return hangout;
 
         // A Zoom/Teams invite often lives only inside <a href="...">, so the raw
         // HTML joins the haystack alongside the stripped text.
@@ -50,21 +57,40 @@ internal static partial class JoinLinks
         return ("", "");
     }
 
-    private static string ConferenceKind(string uri, JsonElement conf)
+    /// <summary>
+    /// The provider of an https link, judged by its parsed host (the domain or a
+    /// whole-label subdomain of it, so neither evilzoom.us nor ?next=zoom.us passes for
+    /// Zoom), with the URL as parsed; ("", "") for anything else. The link handed back
+    /// is the parsed one, escaped, never the raw string: a quote or a space that the
+    /// parser accepted must not reach the browser's command line as written.
+    /// </summary>
+    private static (string Url, string Kind) Known(string url)
     {
-        // Same rule as the patterns above: judge the host, not a substring of the whole
-        // URL, or evilzoom.us (or ?next=zoom.us) would be labelled as Zoom.
-        var host = Uri.TryCreate(uri, UriKind.Absolute, out var parsed) ? parsed.Host : "";
-        if (IsHost(host, "meet.google.com")) return "meet";
-        if (IsHost(host, "zoom.us")) return "zoom";
-        if (host.StartsWith("teams.", StringComparison.OrdinalIgnoreCase) || host.Contains(".teams.", StringComparison.OrdinalIgnoreCase))
-        {
-            if (IsHost(host, "microsoft.com") || IsHost(host, "live.com") || IsHost(host, "microsoft.us")) return "teams";
-        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return ("", "");
+        // Uri keeps a Unicode host as it is: evil.com／.zoom.us (a fullwidth slash) ends
+        // in .zoom.us here, while a browser that maps it to "/" opens evil.com. The
+        // providers' hosts are all plain ASCII, so nothing else needs to pass.
+        if (!uri.Host.All(char.IsAscii)) return ("", "");
+        var kind = KnownKind(uri.Host);
+        return kind.Length > 0 ? (uri.AbsoluteUri, kind) : ("", "");
+    }
+
+    private static string KnownKind(string host)
+    {
+        // Classic Hangouts links still sit on old recurring events.
+        if (IsHost(host, "meet.google.com") || IsHost(host, "hangouts.google.com")) return "meet";
+        // Zoom for Government lives on its own domain.
+        if (IsHost(host, "zoom.us") || IsHost(host, "zoomgov.com")) return "zoom";
+        // Commercial, personal, the cloud.microsoft domain and US government clouds
+        // (gov.teams.microsoft.us).
+        if (IsHost(host, "teams.microsoft.com") || IsHost(host, "teams.live.com")
+            || IsHost(host, "teams.cloud.microsoft") || IsHost(host, "teams.microsoft.us")) return "teams";
         if (IsHost(host, "webex.com")) return "webex";
+        if (IsHost(host, "whereby.com")) return "whereby";
+        if (IsHost(host, "meet.jit.si")) return "jitsi";
         if (IsHost(host, "chime.aws")) return "chime";
-        var solution = conf.Obj("conferenceSolution").Str("name").ToLowerInvariant();
-        return solution.Length > 0 ? solution.Split(' ')[0] : "other";
+        if (IsHost(host, "app.slack.com")) return "slack";
+        return "";
     }
 
     /// <summary>True when <paramref name="host"/> is <paramref name="domain"/> or a whole-label subdomain of it.</summary>
